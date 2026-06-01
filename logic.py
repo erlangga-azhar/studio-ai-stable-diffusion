@@ -7,98 +7,67 @@ from diffusers import (
     DPMSolverMultistepScheduler,
     DDIMScheduler
 )
-from PIL import Image, ImageFilter
+from PIL import Image, ImageDraw, ImageFilter
 
-# MODEL LOADER (JANGAN DIUBAH)
+# Memuat model Generative AI ke dalam memori.
+# Mengimplementasikan 'Safe Mode' untuk mencegah Out of Memory (OOM) pada environment CPU (seperti Streamlit Community Cloud).
 def load_models_cached():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Loading models to {device}")
 
-    # Gunakan float16 untuk GPU, tapi gunakan float32 untuk CPU Cloud agar tidak error
-    weight_dtype = torch.float16 if device == "cuda" else torch.float32
+    # Safe Mode: Bypass pengunduhan model besar jika berjalan di instans CPU murni
+    if device == "cpu":
+        print("Environment CPU terdeteksi. Mengaktifkan Safe Mode (Bypass model load).")
+        return "SAFE_MODE", "SAFE_MODE"
 
+    # Memuat model normal untuk environment GPU
+    weight_dtype = torch.float16
     pipe_txt2img = StableDiffusionPipeline.from_pretrained(
         "runwayml/stable-diffusion-v1-5", 
         torch_dtype=weight_dtype,
-        low_cpu_mem_usage=True  # <--- khusus RAM Server Streamlit
+        low_cpu_mem_usage=True
     ).to(device)
 
     pipe_inpaint = StableDiffusionInpaintPipeline.from_pretrained(
         "runwayml/stable-diffusion-inpainting", 
         torch_dtype=weight_dtype,
-        low_cpu_mem_usage=True  # <--- khusus RAM Server Streamlit
+        low_cpu_mem_usage=True
     ).to(device)
 
     return pipe_txt2img, pipe_inpaint
 
-# Ini mencegah error "Function not found" jika hanya mengerjakan Basic
-def flush_memory(): pass
-def set_scheduler(pipe, name): return pipe
-def run_inpainting(pipe, img, mask, prompt, strength): return None
-def prepare_outpainting(img, expand=128): return img, None
-
-
-def generate_image(pipe, prompt, neg_prompt, seed, steps, cfg, num_images=1, scheduler_name="Euler A"):
-
-    ### MULAI CODE ###
-
-    # Setup Generator (Seed)
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    generator = torch.Generator(device=device).manual_seed(seed)
-
-    # Generate gambar standard
-    image = pipe(
-        prompt=prompt,
-        negative_prompt=neg_prompt,
-        num_inference_steps=steps,
-        guidance_scale=cfg,
-        generator=generator
-    ).images[0]
-    ### SELESAI CODE ###
-
-    # Kembalikan dalam bentuk List agar kompatibel dengan UI (List isi 1 gambar)
-    return [image]
-
-# Implementasi pembersihan RAM GPU
+# Membersihkan VRAM GPU untuk mencegah kebocoran memori antar iterasi generasi.
 def flush_memory():
-
-    ### MULAI CODE ###
-
     gc.collect()
-    torch.cuda.empty_cache()
-
-    ### SELESAI CODE ###
-
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
     print("Memory Flushed!")
 
-# Ganti scheduler sesuai input
+# Mengonfigurasi scheduler difusi berdasarkan input pengguna.
 def set_scheduler(pipe, scheduler_name):
-
-    ### MULAI CODE ###
-
     if scheduler_name == "Euler A":
         pipe.scheduler = EulerAncestralDiscreteScheduler.from_config(pipe.scheduler.config)
     elif scheduler_name == "DPM++":
         pipe.scheduler = DPMSolverMultistepScheduler.from_config(pipe.scheduler.config)
     elif scheduler_name == "DDIM":
         pipe.scheduler = DDIMScheduler.from_config(pipe.scheduler.config)
-
-    ### SELESAI CODE ###
-
     return pipe
 
-# Definisikan ulang fungsi generate_image dan tambahkan parameter untuk batch inference
+# Menghasilkan gambar dari teks (Text-to-Image).
 def generate_image(pipe, prompt, neg_prompt, seed, steps, cfg, num_images=1, scheduler_name="Euler A"):
-
-    ### MULAI CODE ###
-
-    # Set Scheduler
+    
+    # Penanganan untuk Safe Mode (Demo Portofolio)
+    if pipe == "SAFE_MODE":
+        img = Image.new('RGB', (512, 512), color=(30, 30, 30))
+        d = ImageDraw.Draw(img)
+        pesan = "[DEMO PORTFOLIO MODE]\n\nServer tidak memiliki instans GPU.\nSistem mencegah render untuk menghindari\nCrash (Out of Memory).\n\nLihat Video Demo di repositori\nuntuk hasil render asli."
+        d.text((40, 200), pesan, fill=(255, 200, 0))
+        return [img]
+    
     pipe = set_scheduler(pipe, scheduler_name)
-
     device = "cuda" if torch.cuda.is_available() else "cpu"
     generator = torch.Generator(device=device).manual_seed(seed)
 
-    # Generate Batch
     result = pipe(
         prompt=prompt,
         negative_prompt=neg_prompt,
@@ -107,17 +76,24 @@ def generate_image(pipe, prompt, neg_prompt, seed, steps, cfg, num_images=1, sch
         num_images_per_prompt=num_images,
         generator=generator
     ).images
-
-    ### SELESAI CODE ###
-
+    
     return result
 
+# Memodifikasi area gambar berdasarkan masking (Image-to-Image / Inpainting).
 def run_inpainting(pipe, image, mask, prompt, strength):
-    # Pastikan konversi RGB/L dan Resize Mask (Nearest)
+    
+    # Penanganan untuk Safe Mode
+    if pipe == "SAFE_MODE":
+        img = Image.new('RGB', (512, 512), color=(30, 30, 30))
+        d = ImageDraw.Draw(img)
+        pesan = "[DEMO PORTFOLIO MODE]\n\nFitur Inpainting dinonaktifkan\nkarena keterbatasan RAM Server."
+        d.text((40, 220), pesan, fill=(255, 200, 0))
+        return img
+
+    # Format standarisasi mode warna dan penyesuaian resolusi mask
     if image.mode != "RGB": image = image.convert("RGB")
     if mask.mode != "L": mask = mask.convert("L")
-
-    # Resize Mask agar tajam
+    
     if image.size != mask.size:
         mask = mask.resize(image.size, resample=Image.NEAREST)
 
@@ -127,23 +103,20 @@ def run_inpainting(pipe, image, mask, prompt, strength):
         mask_image=mask,
         strength=strength
     ).images[0]
-
+    
     return result
 
+# Menyiapkan kanvas perluasan dan mask spasial untuk proses Outpainting (Zoom Out).
 def prepare_outpainting(image, expand_pixels=128):
-
-    ### MULAI CODE ###
     w, h = image.size
     new_w = w + (expand_pixels * 2)
     new_h = h + (expand_pixels * 2)
 
-    # Safety: Resolusi kelipatan 8
+    # Memastikan resolusi kanvas kelipatan 8 (standar model arsitektur difusi)
     new_w -= (new_w % 8)
     new_h -= (new_h % 8)
 
-    ### SELESAI CODE ###
-
-    # Background Blur
+    # Mengisi area ekstensi kanvas dengan interpolasi blur dari gambar asli
     bg = image.resize((new_w, new_h), resample=Image.BICUBIC)
     bg = bg.filter(ImageFilter.GaussianBlur(radius=50))
 
@@ -152,14 +125,10 @@ def prepare_outpainting(image, expand_pixels=128):
     paste_y = (new_h - h) // 2
     canvas.paste(image, (paste_x, paste_y))
 
-    # Masker (Putih = Edit, Hitam = Keep)
+    # Membuat masking biner (Putih = Area difusi baru, Hitam = Area retensi gambar asli)
     mask = Image.new("L", (new_w, new_h), 255)
     inner_box = Image.new("L", (w, h), 0)
-
-    ### MULAI CODE ###
-
+    
     mask.paste(inner_box, (paste_x, paste_y))
-
-    ### SELESAI CODE ###
 
     return canvas, mask
