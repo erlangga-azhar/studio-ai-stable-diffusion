@@ -75,8 +75,7 @@ streamlit run app.py
  ┣ 📜 logic.py             # Core pipeline logic (Model loading, Txt2Img, Img2Img)
  ┣ 📜 requirements.txt     # Python dependencies
  ┣ 📜 README.md            # Project documentation
- ┣ 📓 Pipeline.ipynb  # Step-by-step experimental notebook
- ┗ 🎥 video_demo_aplikasi_BFGAI.mp4 # Application demonstration
+ ┗ 📓 Pipeline.ipynb  # Step-by-step experimental notebook
 
 ```
 
