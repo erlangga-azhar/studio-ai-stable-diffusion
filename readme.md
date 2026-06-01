@@ -80,7 +80,7 @@ streamlit run app.py
 ```
 ## 🚀 Live Demo & Preview
 
-* **Live App:** [Insert your Streamlit App Link Here]
+* **Live App:** [[click here!](https://studio-ai-stable-diffusion.streamlit.app/)]
 * **Video Demo:** [![Watch the video](https://img.shields.io/badge/🎥_Tonton_Video_Demo_Aplikasi-FF0000?style=for-the-badge&logo=youtube&logoColor=white)](https://files.catbox.moe/75gk1e.mp4)
 
 *(Klik tombol di atas untuk melihat *walkthrough* penuh dari aplikasi ini)*
