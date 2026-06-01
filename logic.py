@@ -14,12 +14,19 @@ def load_models_cached():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Loading models to {device}")
 
+    # Gunakan float16 untuk GPU, tapi gunakan float32 untuk CPU Cloud agar tidak error
+    weight_dtype = torch.float16 if device == "cuda" else torch.float32
+
     pipe_txt2img = StableDiffusionPipeline.from_pretrained(
-        "runwayml/stable-diffusion-v1-5", torch_dtype=torch.float16
+        "runwayml/stable-diffusion-v1-5", 
+        torch_dtype=weight_dtype,
+        low_cpu_mem_usage=True  # <--- khusus RAM Server Streamlit
     ).to(device)
 
     pipe_inpaint = StableDiffusionInpaintPipeline.from_pretrained(
-        "runwayml/stable-diffusion-inpainting", torch_dtype=torch.float16
+        "runwayml/stable-diffusion-inpainting", 
+        torch_dtype=weight_dtype,
+        low_cpu_mem_usage=True  # <--- khusus RAM Server Streamlit
     ).to(device)
 
     return pipe_txt2img, pipe_inpaint
